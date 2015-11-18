@@ -14,13 +14,13 @@ This is an upgrade script to bring UserFrosting's database from version 0.3.0 to
 
 1. Backup your database. There's no rollback for structure-altering statements, so always back up.
 2. Pull in the new version of the UserFrosting repository and merge it with your changes.
-3. Place this file in the userfrosting directory (the same directory that contains initialize.php).
+3. Place upgrade.php in the userfrosting directory (the same directory that contains initialize.php).
 4. Configure the option(s) listed below.
 5. Run it from the command line:
 	php upgrade.php
 
 ## Configuration Options
-- $usersToProcess - The count of users to convert to the database per query. Each user can have up to 4 statements that need to be written to the database.
+$usersToProcess - The count of users to convert to the database per query. Each user can have up to 4 statements that need to be written to the database.
 
 ## Changelog for 0.3.1.7
 - Initial version
