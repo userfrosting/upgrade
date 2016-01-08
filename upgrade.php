@@ -53,6 +53,8 @@ $versionTargetDatabase = '0.3.1.8'; // This is the current max version we can up
 $versionCurrentDatabase = $settings['version'];
 $versionCurrentCode = $setting_values['userfrosting']['version'];
 
+echo PHP_EOL . PHP_EOL . 'WARNING: This program only updates your database to the newest version. For more information on how to upgrade UserFrosting itself, please see the README.md';
+
 echo PHP_EOL . PHP_EOL . 'Current database version: ' . $versionCurrentDatabase . PHP_EOL;
 echo 'Current code version: ' . $versionCurrentCode . PHP_EOL;
 echo 'Target database version: 0.3.1.8' . PHP_EOL;
