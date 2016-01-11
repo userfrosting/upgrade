@@ -1,4 +1,4 @@
-# UserFrosting Database Updater v0.3.1.7.1
+# UserFrosting Database Updater v0.3.1.11.0
 
 http://www.userfrosting.com
 
@@ -53,10 +53,11 @@ $usersToProcess - The count of users to convert to the database per query. Each 
 
 ## Changelog
 
-#### 0.3.1.7.11
+#### 0.3.1.11.0
 - Added better instructions to `README.md`
 - Added warning to program about only upgrading database, not code base
 - No database changes from UF 0.3.1.7 to UF 0.3.1.11
+- Finalized version numbering: The first four digits refer to the latest version of UF tested and supported by the current database version (in this case, 0.3.1.11). The last number is for my own versioning within the Upgrade tool (in this case, .0).
 
 #### 0.3.1.7
 - Initial version
