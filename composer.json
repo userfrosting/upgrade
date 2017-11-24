@@ -1,0 +1,25 @@
+{
+    "name": "userfrosting/upgrade",
+    "type": "userfrosting-sprinkle",
+    "description": "Upgrade your database to the latest version of UserFrosting from previous versions of UserFrosting, and other frameworks.",
+    "keywords": ["php user management", "userfrosting"],
+    "homepage": "https://github.com/userfrosting/upgrade",
+    "license" : "MIT",
+    "authors" : [
+        {
+            "name": "Alexander Weissman",
+            "homepage": "https://alexanderweissman.com"
+        }
+    ],
+    "require": {
+        "php": ">=5.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "UserFrosting\\Sprinkle\\Upgrade\\": "src/"
+        }
+    },
+    "extra": {
+        "installer-name": "upgrade"
+    }
+}
