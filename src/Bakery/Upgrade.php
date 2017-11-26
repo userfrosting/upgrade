@@ -40,6 +40,8 @@ class Upgrade extends BaseCommand
 
     protected $legacyPrefix = '';
 
+    protected $lastOldDefaultPermissionId = 13;
+
     protected function configure()
     {
         // the name of the command (the part after "php bakery")
@@ -118,42 +120,14 @@ class Upgrade extends BaseCommand
         $this->migrateActivities($renamedSourceTables[$this->legacyPrefix . 'user_event']);
 
         // Re-add the default roles and permissions
-        $newPermissionsDictionary = [];
-        foreach ($this->defaultPermissions as $permission) {
-            $newId = DB::connection()->table('permissions')->insertGetId([
-                'slug' => $permission->slug,
-                'name' => $permission->name,
-                'conditions' => $permission->conditions,
-                'description' => $permission->description,
-                'created_at' => $permission->created_at,
-                'updated_at' => $permission->updated_at
-            ]);
+        $this->reAddDefaultRolesAndPermissions();
 
-            $newPermissionsDictionary[$permission->id] = $newId;
-        }
+        // Complete installation
+        $command = $this->getApplication()->find('build-assets');
+        $command->run($input, $output);
 
-        $newPermissionMappings = [];
-        foreach ($this->defaultRoles as $role) {
-            $newRoleId = DB::connection()->table('roles')->insertGetId([
-                'slug' => $role->slug,
-                'name' => $role->name,
-                'description' => $role->description,
-                'created_at' => $role->created_at,
-                'updated_at' => $role->updated_at
-            ]);
-
-            foreach ($role->permissions as $permission) {
-                $newPermissionId = $newPermissionsDictionary[$permission->id];
-                $newPermissionMappings[] = [
-                    'permission_id' => $newPermissionId,
-                    'role_id' => $newRoleId,
-                    'created_at' => $permission->pivot->created_at,
-                    'updated_at' => $permission->pivot->updated_at
-                ];
-            }
-        }
-
-        DB::connection()->table('permission_roles')->insert($newPermissionMappings);
+        $command = $this->getApplication()->find('clear-cache');
+        $command->run($input, $output);
     }
 
     protected function migrateGroups($tableName)
@@ -201,7 +175,7 @@ class Upgrade extends BaseCommand
         DB::connection()->table('permissions')->truncate();
         DB::connection()->table('permission_roles')->truncate();
 
-        $legacyRows = DB::connection()->table($tableName)->where('id', '>', 10)->get();
+        $legacyRows = DB::connection()->table($tableName)->where('id', '>', $this->lastOldDefaultPermissionId)->get();
 
         foreach ($legacyRows as $legacyRow) {
             DB::connection()->table('permissions')->insert([
@@ -280,6 +254,46 @@ class Upgrade extends BaseCommand
                 'description' => $legacyRow->description
             ]);
         }
+    }
+
+    protected function reAddDefaultRolesAndPermissions()
+    {
+        $newPermissionsDictionary = [];
+        foreach ($this->defaultPermissions as $permission) {
+            $newId = DB::connection()->table('permissions')->insertGetId([
+                'slug' => $permission->slug,
+                'name' => $permission->name,
+                'conditions' => $permission->conditions,
+                'description' => $permission->description,
+                'created_at' => $permission->created_at,
+                'updated_at' => $permission->updated_at
+            ]);
+
+            $newPermissionsDictionary[$permission->id] = $newId;
+        }
+
+        $newPermissionMappings = [];
+        foreach ($this->defaultRoles as $role) {
+            $newRoleId = DB::connection()->table('roles')->insertGetId([
+                'slug' => $role->slug,
+                'name' => $role->name,
+                'description' => $role->description,
+                'created_at' => $role->created_at,
+                'updated_at' => $role->updated_at
+            ]);
+
+            foreach ($role->permissions as $permission) {
+                $newPermissionId = $newPermissionsDictionary[$permission->id];
+                $newPermissionMappings[] = [
+                    'permission_id' => $newPermissionId,
+                    'role_id' => $newRoleId,
+                    'created_at' => $permission->pivot->created_at,
+                    'updated_at' => $permission->pivot->updated_at
+                ];
+            }
+        }
+
+        DB::connection()->table('permission_roles')->insert($newPermissionMappings);
     }
 
     protected function mapOldTableNames($sourceTables)
