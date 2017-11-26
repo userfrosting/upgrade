@@ -202,7 +202,7 @@ class Upgrade extends BaseCommand
         $legacyRows = DB::connection()->table($tableName)->get();
 
         foreach ($legacyRows as $legacyRow) {
-            list($firstName, $lastName) = explode(' ', $legacyRow->display_name);
+            list($firstName, $lastName) = explode(' ', $legacyRow->display_name, 1);
 
             DB::connection()->table('users')->insert([
                 'id' => $legacyRow->id,
