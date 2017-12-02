@@ -63,7 +63,7 @@ class Upgrade extends BaseCommand
     /**
      * @var The id of the last permission that should be ignored when migrating old permissions.
      */
-    protected $lastOldDefaultPermissionId = 13;
+    protected $lastOldDefaultPermissionId = 9;
 
     protected function configure()
     {
