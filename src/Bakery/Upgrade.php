@@ -23,6 +23,9 @@ class Upgrade extends BaseCommand
      */
     protected $schema;
 
+    /**
+     * @var array The tables containing the data to be migrated.
+     */
     protected $sourceTables = [
         'authorize_group',
         'authorize_user',
@@ -34,12 +37,32 @@ class Upgrade extends BaseCommand
         'user_rememberme'
     ];
 
+    /**
+     * @var Collection
+     */
     protected $defaultRoles;
 
+    /**
+     * @var Collection
+     */
     protected $defaultPermissions;
 
+    /**
+     * @var array
+     */
+    protected $legacyGroupRoleMappings = [
+        'user' => 'user',
+        'administrator' => 'site-admin'
+    ];
+
+    /**
+     * @var string the prefix on the legacy (source) tables.
+     */
     protected $legacyPrefix = '';
 
+    /**
+     * @var The id of the last permission that should be ignored when migrating old permissions.
+     */
     protected $lastOldDefaultPermissionId = 13;
 
     protected function configure()
@@ -96,31 +119,34 @@ class Upgrade extends BaseCommand
         if (!$this->io->confirm('Continue?', true)) {
             exit(0);
         }
-        // Rename the 3.1 tables
-        foreach ($renamedSourceTables as $oldName => $newName) {
-            $this->schema->rename($oldName, $newName);
-        }
 
-        // Install the UF4 tables
-        $command = $this->getApplication()->find('migrate');
-        $command->run($input, $output);
+        DB::transaction( function() use ($renamedSourceTables, $input, $output) {
+            // Rename the 3.1 tables
+            foreach ($renamedSourceTables as $oldName => $newName) {
+                $this->schema->rename($oldName, $newName);
+            }
 
-        // Get the default roles, and their permissions
-        $this->defaultPermissions = Permission::get();
-        $this->defaultRoles = Role::with('permissions')->get();
+            // Install the UF4 tables
+            $command = $this->getApplication()->find('migrate');
+            $command->run($input, $output);
 
-        // Migrate data from 3.1 -> 4.1
-        // Groups become both Roles and Groups in UF4
-        $this->migrateGroups($renamedSourceTables[$this->legacyPrefix . 'group']);
-        $this->migrateRoles($renamedSourceTables[$this->legacyPrefix . 'group']);
-        $this->migratePermissions($renamedSourceTables[$this->legacyPrefix . 'authorize_group']);
+            // Get the default roles, and their permissions
+            $this->defaultPermissions = Permission::get();
+            $this->defaultRoles = Role::with('permissions')->get()->keyBy('slug');
 
-        $this->migrateUsers($renamedSourceTables[$this->legacyPrefix . 'user']);
-        $this->migrateUserRoles($renamedSourceTables[$this->legacyPrefix . 'group_user']);
-        $this->migrateActivities($renamedSourceTables[$this->legacyPrefix . 'user_event']);
+            // Migrate data from 3.1 -> 4.1
+            // Groups become both Roles and Groups in UF4
+            $this->migrateGroups($renamedSourceTables[$this->legacyPrefix . 'group']);
+            $this->migrateRoles($renamedSourceTables[$this->legacyPrefix . 'group']);
+            $this->migratePermissions($renamedSourceTables[$this->legacyPrefix . 'authorize_group']);
 
-        // Re-add the default roles and permissions
-        $this->reAddDefaultRolesAndPermissions();
+            $this->migrateUsers($renamedSourceTables[$this->legacyPrefix . 'user']);
+            $this->migrateUserRoles($renamedSourceTables[$this->legacyPrefix . 'group_user']);
+            $this->migrateActivities($renamedSourceTables[$this->legacyPrefix . 'user_event']);
+
+            // Re-add the default roles and permissions
+            $this->reAddDefaultRolesAndPermissions();
+        });
 
         // Complete installation
         $command = $this->getApplication()->find('build-assets');
@@ -158,14 +184,36 @@ class Upgrade extends BaseCommand
         $legacyRows = DB::connection()->table($tableName)->get();
 
         foreach ($legacyRows as $legacyRow) {
-            DB::connection()->table('roles')->insert([
+            $legacySlug = Str::slug($legacyRow->name);
+
+            $newRow = [
                 'id' => $legacyRow->id,
-                'slug' => Str::slug($legacyRow->name),
+                'slug' => $legacySlug,
                 'name' => $legacyRow->name,
                 'description' => '',
                 'created_at' => Carbon::now(),
                 'updated_at' => Carbon::now()
-            ]);
+            ];
+
+            // If the legacy record is replaceable by one of the default roles in UF4, replace it
+            if (isset($this->legacyGroupRoleMappings[$legacySlug])) {
+                $uf4Slug = $this->legacyGroupRoleMappings[$legacySlug];
+
+                $uf4Role = $this->defaultRoles->get($uf4Slug);
+                // Set the id to the same as the legacy row's id.
+                // This way, anything that was keyed to the old legacy record will be sure to point to the
+                // corresponding new default role.
+                $newRow = [
+                    'id' => $legacyRow->id,
+                    'slug' => $uf4Role->slug,
+                    'name' => $uf4Role->name,
+                    'description' => $uf4Role->description,
+                    'created_at' => $uf4Role->created_at,
+                    'updated_at' => $uf4Role->updated_at
+                ];
+            }
+
+            DB::connection()->table('roles')->insert($newRow);
         }
     }
 
@@ -258,6 +306,7 @@ class Upgrade extends BaseCommand
 
     protected function reAddDefaultRolesAndPermissions()
     {
+        // Map original permission ids to new permission ids
         $newPermissionsDictionary = [];
         foreach ($this->defaultPermissions as $permission) {
             $newId = DB::connection()->table('permissions')->insertGetId([
@@ -274,13 +323,18 @@ class Upgrade extends BaseCommand
 
         $newPermissionMappings = [];
         foreach ($this->defaultRoles as $role) {
-            $newRoleId = DB::connection()->table('roles')->insertGetId([
-                'slug' => $role->slug,
-                'name' => $role->name,
-                'description' => $role->description,
-                'created_at' => $role->created_at,
-                'updated_at' => $role->updated_at
-            ]);
+            // Determine if this role has already been added
+            $newRoleId = DB::connection()->table('roles')->where('slug', $role->slug)->first()->id;
+
+            if (!$newRoleId) {
+                $newRoleId = DB::connection()->table('roles')->insertGetId([
+                    'slug' => $role->slug,
+                    'name' => $role->name,
+                    'description' => $role->description,
+                    'created_at' => $role->created_at,
+                    'updated_at' => $role->updated_at
+                ]);
+            }
 
             foreach ($role->permissions as $permission) {
                 $newPermissionId = $newPermissionsDictionary[$permission->id];
@@ -303,7 +357,7 @@ class Upgrade extends BaseCommand
         $renamedSourceTables = [];
         foreach ($sourceTables as $baseName) {
             $oldName = $this->legacyPrefix . $baseName;
-            $newName = $randomPrefix . '_' . $oldName;
+            $newName = '_' . $randomPrefix . '_' . $oldName;
             $renamedSourceTables[$oldName] = $newName;
         }
 
