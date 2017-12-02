@@ -398,7 +398,9 @@ class Upgrade extends BaseCommand
                 $newName = $this->newPrefix . $baseName;
             }
 
-            $renamedSourceTables[$oldName] = $newName;
+            if ($oldName != $newName) {
+                $renamedSourceTables[$oldName] = $newName;
+            }
         }
 
         return $renamedSourceTables;
