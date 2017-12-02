@@ -11,6 +11,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
 use UserFrosting\Sprinkle\Account\Database\Models\Permission;
 use UserFrosting\Sprinkle\Account\Database\Models\Role;
+use UserFrosting\Sprinkle\Account\Database\Models\User;
 use UserFrosting\System\Bakery\BaseCommand;
 use UserFrosting\System\Bakery\DatabaseTest;
 
@@ -289,7 +290,7 @@ class Upgrade extends BaseCommand
             ]);
         }
 
-        // TODO: set theme, last_activity_id for each user
+        // TODO: set theme for each user
     }
 
     protected function migrateUserRoles($tableName)
@@ -319,6 +320,15 @@ class Upgrade extends BaseCommand
                 'occurred_at' => $legacyRow->occurred_at,
                 'description' => $legacyRow->description
             ]);
+        }
+
+        // Set last_activity_id for each user
+        $newUsers = User::with('lastActivityOfType')->get();
+        foreach ($newUsers as $user) {
+            if ($user->lastActivityOfType) {
+                $user->last_activity_id = $user->lastActivityOfType->id;
+                $user->save();
+            }
         }
     }
 
