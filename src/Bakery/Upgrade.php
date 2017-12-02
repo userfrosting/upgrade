@@ -21,7 +21,12 @@ class Upgrade extends BaseCommand
     /**
      * @var @Illuminate\Database\Schema
      */
-    protected $schema;
+    protected $legacySchema;
+
+    /**
+     * @var @Illuminate\Database\Schema
+     */
+    protected $newSchema;
 
     /**
      * @var array The tables containing the data to be migrated.
@@ -61,6 +66,11 @@ class Upgrade extends BaseCommand
     protected $legacyPrefix = '';
 
     /**
+     * @var string the prefix on new (target) tables.
+     */
+    protected $newPrefix = '';
+
+    /**
      * @var The id of the last permission that should be ignored when migrating old permissions.
      */
     protected $lastOldDefaultPermissionId = 9;
@@ -80,7 +90,10 @@ class Upgrade extends BaseCommand
         $this->testDB();
 
         // Get schema required to run the table blueprints
-        $this->schema = DB::schema();
+        $this->newSchema = DB::schema();
+        $this->legacySchema = DB::schema('legacy');
+
+        $this->newPrefix = DB::connection()->getTablePrefix();
 
         $this->io->writeln("<info>This command will attempt to install UserFrosting 4.1 on top of an existing UF 3.1 database, and migrate your users, groups, and events.  Once this is complete, you should begin migrating the code from your UF 3.1 application to a new UF4 Sprinkle.</info>");
 
@@ -100,14 +113,19 @@ class Upgrade extends BaseCommand
         }
 
         $renamedSourceTables = $this->mapOldTableNames($this->sourceTables);
-        $notFoundTables = [];
+        $padding = max(array_map('strlen', array_keys($renamedSourceTables)));
 
         $this->io->note('The following tables in your database will be renamed before being migrated to UF4');
         foreach ($renamedSourceTables as $oldName => $newName) {
-            if ($this->schema->hasTable($oldName)) {
-                $this->io->text($oldName . ' => ' . $newName);
-            } else {
-                $notFoundTables[] = $oldName;
+            $this->io->text(str_pad($oldName, $padding, ' ') . ' => ' . $newName);
+        }
+
+        // Check that all legacy core UF tables actually exist in the schema
+        $notFoundTables = [];
+        foreach ($this->sourceTables as $sourceTable) {
+            $sourceTable = $this->legacyPrefix . $sourceTable;
+            if (!isset($renamedSourceTables[$sourceTable])) {
+                $notFoundTables[] = $sourceTable;
             }
         }
 
@@ -123,7 +141,7 @@ class Upgrade extends BaseCommand
         DB::transaction( function() use ($renamedSourceTables, $input, $output) {
             // Rename the 3.1 tables
             foreach ($renamedSourceTables as $oldName => $newName) {
-                $this->schema->rename($oldName, $newName);
+                $this->legacySchema->rename($oldName, $newName);
             }
 
             // Install the UF4 tables
@@ -161,7 +179,7 @@ class Upgrade extends BaseCommand
         // Clear out the default UF4 groups
         DB::connection()->table('groups')->truncate();
 
-        $legacyRows = DB::connection()->table($tableName)->get();
+        $legacyRows = DB::connection('legacy')->table($tableName)->get();
 
         foreach ($legacyRows as $legacyRow) {
             DB::connection()->table('groups')->insert([
@@ -181,7 +199,7 @@ class Upgrade extends BaseCommand
         // Clear out the default UF4 roles
         DB::connection()->table('roles')->truncate();
 
-        $legacyRows = DB::connection()->table($tableName)->get();
+        $legacyRows = DB::connection('legacy')->table($tableName)->get();
 
         foreach ($legacyRows as $legacyRow) {
             $legacySlug = Str::slug($legacyRow->name);
@@ -223,7 +241,7 @@ class Upgrade extends BaseCommand
         DB::connection()->table('permissions')->truncate();
         DB::connection()->table('permission_roles')->truncate();
 
-        $legacyRows = DB::connection()->table($tableName)->where('id', '>', $this->lastOldDefaultPermissionId)->get();
+        $legacyRows = DB::connection('legacy')->table($tableName)->where('id', '>', $this->lastOldDefaultPermissionId)->get();
 
         foreach ($legacyRows as $legacyRow) {
             DB::connection()->table('permissions')->insert([
@@ -247,7 +265,7 @@ class Upgrade extends BaseCommand
 
     protected function migrateUsers($tableName)
     {
-        $legacyRows = DB::connection()->table($tableName)->get();
+        $legacyRows = DB::connection('legacy')->table($tableName)->get();
 
         foreach ($legacyRows as $legacyRow) {
             list($firstName, $lastName) = explode(' ', $legacyRow->display_name, 1);
@@ -279,7 +297,7 @@ class Upgrade extends BaseCommand
         // Clear out the default UF4 mappings
         DB::connection()->table('role_users')->truncate();
 
-        $legacyRows = DB::connection()->table($tableName)->get();
+        $legacyRows = DB::connection('legacy')->table($tableName)->get();
 
         foreach ($legacyRows as $legacyRow) {
             DB::connection()->table('role_users')->insert([
@@ -291,7 +309,7 @@ class Upgrade extends BaseCommand
 
     protected function migrateActivities($tableName)
     {
-        $legacyRows = DB::connection()->table($tableName)->get();
+        $legacyRows = DB::connection('legacy')->table($tableName)->get();
 
         foreach ($legacyRows as $legacyRow) {
             DB::connection()->table('activities')->insert([
@@ -350,14 +368,26 @@ class Upgrade extends BaseCommand
         DB::connection()->table('permission_roles')->insert($newPermissionMappings);
     }
 
-    protected function mapOldTableNames($sourceTables)
+    protected function mapOldTableNames($legacyTables)
     {
         $randomPrefix = str_random(10);
 
         $renamedSourceTables = [];
-        foreach ($sourceTables as $baseName) {
-            $oldName = $this->legacyPrefix . $baseName;
-            $newName = '_' . $randomPrefix . '_' . $oldName;
+
+        $sourceTables = DB::connection('legacy')->select('SHOW TABLES');
+        foreach ($sourceTables as $table) {
+            $oldName = head((array) $table);
+
+            // Remove any legacy prefix
+            $baseName = preg_replace("/^{$this->legacyPrefix}/", '', $oldName);
+
+            // Prefix core UF legacy tables.  Rename all other legacy tables using the new schema's prefix.
+            if (in_array($baseName, $legacyTables)) {
+                $newName = '_' . $randomPrefix . '_' . $oldName;
+            } else {
+                $newName = $this->newPrefix . $baseName;
+            }
+
             $renamedSourceTables[$oldName] = $newName;
         }
 
