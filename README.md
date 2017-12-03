@@ -1,6 +1,6 @@
-# Migration Sprinkle (UserFrosting 4.1)
+# Upgrade Sprinkle (UserFrosting 4.1)
 
-Migrate to UserFrosting 4 from previous versions of UserFrosting, and other frameworks. 
+Upgrade your database to UserFrosting 4 from previous versions of UserFrosting, and other frameworks. 
 
 ## Usage
 
@@ -16,18 +16,18 @@ Clone the UF4 repo and run `composer install`, as per the documentation.  Manual
 
 ### Step 3
 
-Edit UserFrosting `app/sprinkles.json` and add the following to the `require` list : `"userfrosting/migrate": "~4.1.0"`. Also add `migrate` to the `base` list. For example:
+Edit UserFrosting `app/sprinkles.json` and add the following to the `require` list : `"userfrosting/upgrade": "~4.1.0"`. Also add `upgrade` to the `base` list. For example:
 
 ```
 {
     "require": {
-        "userfrosting/migrate": "~4.1.0"
+        "userfrosting/upgrade": "~4.1.0"
     },
     "base": [
         "core",
         "account",
         "admin",
-        "migrate"
+        "upgrade"
     ]
 }
 ```
